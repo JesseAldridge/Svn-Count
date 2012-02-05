@@ -34,10 +34,7 @@ for line in log_lines:
     counting_monsters[name] += num_lines
     if len(diff_lines) < 100:
         pprint(diff_lines)
-    else:
         normal_lines[name] += num_lines
-        print 'too many lines, ignoring'
-        continue
 
     # Print as we go.
 
