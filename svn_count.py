@@ -3,42 +3,55 @@ from pprint import pprint
 import re
 from subprocess import Popen, PIPE
 
-# Call svn log on the repo.  Parse the lines that look like this:
-# r545 | jesse.aldridge | 2012-02-03 19:43:41 -0600 (Fri, 03 Feb 2012) | 1 line
+class SvnCounter:
+    def __init__(self, path_to_project=None, url=None):
+        ' Init state. '
 
-path_to_project = '/path/to/my/project'
-print 'checking log...'
-p = Popen('svn log'.split(), cwd=path_to_project, stdout=PIPE)
-log_lines = p.communicate()[0].splitlines()
-log_lines = [line for line in log_lines if re.search('^r[0-9]+', line)]
+        self.normal_lines = defaultdict(int)
+        self.counting_monsters = defaultdict(int)
+        self.path_to_project = path_to_project
+        self.url = url
 
-normal_lines = defaultdict(int)
-counting_monsters = defaultdict(int)
+    def svn_cmd(self, inner_cmd, line_regex):
+        ' Run svn command.  Return output lines matching line_regex. '
 
-for line in log_lines:
-    rev, name, date, lines_committed = [s.strip() for s in line.split('|')]
-    rev = int(rev[1:])
+        url = self.url
+        full_cmd = 'svn {0} {1}'.format(inner_cmd, url if url else '')
+        print 'full_cmd:', full_cmd
+        p = Popen(full_cmd.split(), cwd=self.path_to_project, stdout=PIPE)
+        log_lines = p.communicate()[0].splitlines()
+        return [line for line in log_lines if re.search(line_regex, line)]
 
-    # Run svn diff.  Pull out the + and - lines.  Ignore if too many.
+    def svn_diff(self, rev, name):
+        ' Run svn diff.  Pull out the + and - lines.  Ignore if too many. '
 
-    print '-------------------------'
-    print 'rev:', rev
-    print 'name:', name
+        print '-------------------------'
+        print 'rev:', rev
+        print 'name:', name
+        diff_lines = self.svn_cmd(
+            'diff -c {0} --diff-cmd diff'.format(rev), 
+            line_regex='^[\+|\-][^\+|\-]')
+        num_lines = len(diff_lines)
+        self.counting_monsters[name] += num_lines
+        if num_lines < 100:
+            pprint(diff_lines)
+            self.normal_lines[name] += num_lines
 
-    p = Popen('svn diff -c {0}'.format(rev).split(),
-              cwd=path_to_project, stdout=PIPE)
-    diff_lines = p.communicate()[0].splitlines()
-    diff_lines = [line for line in diff_lines
-                  if re.search('^[\+|\-][^\+|\-]', line)]
-    num_lines = len(diff_lines)
-    counting_monsters[name] += num_lines
-    if len(diff_lines) < 100:
-        pprint(diff_lines)
-        normal_lines[name] += num_lines
+    def go(self):
+        ' example line:  r545 | jesse.aldridge | 2012-02-03 19:43:41 -0600 (Fri, 03 Feb 2012) | 1 line'
 
-    # Print as we go.
+        log_lines = self.svn_cmd('log --limit 100', line_regex='^r[0-9]+')
+        for line in log_lines:
+            rev, name, date, lines_committed = [
+                s.strip() for s in line.split('|')]
+            rev = int(rev[1:])
 
-    print 'just counting normal commits:'
-    pprint(dict(normal_lines))
-    print 'counting monster commits:'
-    pprint(dict(counting_monsters))
+            self.svn_diff(rev, name)
+
+            print 'just counting normal commits:'
+            pprint(dict(self.normal_lines))
+            print 'counting monster commits:'
+            pprint(dict(self.counting_monsters))
+
+if __name__ == '__main__':
+    SvnCounter(url='http://dev.zenoss.com/svnint/').go()
